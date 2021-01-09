@@ -1,21 +1,36 @@
+#[macro_use]
+extern crate log;
+
 use actix_web::{error, web, App, HttpResponse, HttpServer, Responder};
+use log::LevelFilter;
 use serde::Deserialize;
 use serde_json::json;
 
+use std::env;
+
 /// Query params for the /pictures endpoint
 #[derive(Deserialize)]
-struct PictureParams {
+struct PicturesParams {
     start_date: String,
     end_date: String,
 }
 
 /// Retrieves a collection of pictures from NASA APOD within the specified date range
-async fn pictures(q: web::Query<PictureParams>) -> impl Responder {
+async fn pictures(q: web::Query<PicturesParams>) -> impl Responder {
     "Hello, World!"
+}
+
+/// This helper function initializes logging on the supplied level unless RUST_LOG was specified
+pub fn init_logging(default_lvl: LevelFilter) {
+    match env::var("RUST_LOG") {
+        Ok(_) => env_logger::init(),
+        Err(_) => env_logger::Builder::new().filter_level(default_lvl).init(),
+    }
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    init_logging(LevelFilter::Info);
     HttpServer::new(|| {
         App::new().service(
             web::resource("/pictures")
