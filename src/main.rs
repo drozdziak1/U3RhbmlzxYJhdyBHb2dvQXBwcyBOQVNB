@@ -2,6 +2,9 @@
 extern crate log;
 
 use actix_web::{error, web, App, HttpResponse, HttpServer, Responder};
+use failure::bail;
+use failure::format_err;
+use chrono::NaiveDate;
 use log::LevelFilter;
 use serde::Deserialize;
 use serde_json::json;
@@ -15,9 +18,26 @@ struct PicturesParams {
     end_date: String,
 }
 
+impl PicturesParams {
+    pub fn parse_and_validate_date_range(&self) -> Result<(NaiveDate, NaiveDate), failure::Error> {
+	let start = NaiveDate::parse_from_str(&self.start_date, "%Y-%m-%d").map_err(|e| format_err!("start_date: {}", e))?;
+	let end = NaiveDate::parse_from_str(&self.end_date, "%Y-%m-%d").map_err(|e| format_err!("end_date: {}", e))?;
+
+	if !(start < end) {
+	    bail!("Start date must be before end date!");
+	}
+
+	Ok((start, end))
+    }
+}
+
 /// Retrieves a collection of pictures from NASA APOD within the specified date range
 async fn pictures(q: web::Query<PicturesParams>) -> impl Responder {
-    "Hello, World!"
+    let (start, end) = match q.parse_and_validate_date_range() {
+	Ok(dates) => dates,
+	Err(e) => return HttpResponse::BadRequest().json(json!({"error": format!("{}", e)})),
+    };
+    HttpResponse::Ok().body("Hello, World!")
 }
 
 /// This helper function initializes logging on the supplied level unless RUST_LOG was specified
@@ -49,7 +69,7 @@ async fn main() -> std::io::Result<()> {
                 .route(web::get().to(pictures)),
         )
     })
-    .bind(("127.0.0.1", 8080))?
+    .bind(("0.0.0.0", 8080))?
     .run()
     .await
 }
