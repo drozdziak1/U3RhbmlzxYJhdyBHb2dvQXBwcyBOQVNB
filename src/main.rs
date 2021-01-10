@@ -38,6 +38,7 @@ async fn main() -> io::Result<()> {
     // logging in prod.
     debug!("Config:\n{:#?}", cfg);
 
+    let cfg4app_data = cfg.clone();
     HttpServer::new(move || {
         App::new().service(
             web::resource("/pictures")
@@ -53,11 +54,11 @@ async fn main() -> io::Result<()> {
                         .into()
                     }),
                 )
-                .app_data(web::Data::new(cfg.clone()))
+                .app_data(web::Data::new(cfg4app_data.clone()))
                 .route(web::get().to(pictures)),
         )
     })
-    .bind(("0.0.0.0", 8080))?
+    .bind((cfg.host, cfg.port))?
     .run()
     .await
 }

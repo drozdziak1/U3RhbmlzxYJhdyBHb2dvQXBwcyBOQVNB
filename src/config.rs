@@ -8,11 +8,13 @@ use crate::ErrBox;
 #[serde(default)]
 pub struct Config {
     /// API key to use for NASA APOD
-    api_key: String,
+    pub api_key: String,
     /// How many requests should be happening at once?
-    concurrent_requests: u32,
+    pub concurrent_requests: u32,
+    /// Which host are we gonna use for this service?
+    pub host: String,
     /// Which port are we gonna use for HTTP?
-    port: u16,
+    pub port: u16,
 }
 
 impl Config {
@@ -28,6 +30,7 @@ impl Default for Config {
         Self {
             api_key: "DEMO_KEY".to_owned(),
             concurrent_requests: 5,
+	    host: "0.0.0.0".to_owned(),
             port: 8080,
         }
     }
