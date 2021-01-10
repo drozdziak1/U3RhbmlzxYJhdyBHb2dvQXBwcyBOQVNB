@@ -4,6 +4,8 @@ use failure::{bail, format_err};
 use serde::Deserialize;
 use serde_json::json;
 
+use crate::config::Config;
+
 /// Query params for the /pictures endpoint
 #[derive(Clone, Deserialize)]
 pub struct PicturesParams {
@@ -28,7 +30,7 @@ impl PicturesParams {
 }
 
 /// Retrieves a collection of pictures from NASA APOD within the specified date range
-pub async fn pictures(q: web::Query<PicturesParams>) -> impl Responder {
+pub async fn pictures(q: web::Query<PicturesParams>, data: web::Data<Config>) -> impl Responder {
     let (start, end) = match q.parse_and_validate() {
         Ok(dates) => dates,
         Err(e) => return HttpResponse::BadRequest().json(json!({ "error": format!("{}", e) })),

@@ -13,7 +13,7 @@ use std::{env, io, sync::Mutex};
 
 use crate::{config::Config, handlers::pictures};
 
-/// This helper function initializes logging on the supplied level unless RUST_LOG was specified
+/// Initializes logging on the supplied level unless RUST_LOG was specified
 pub fn init_logging(default_lvl: LevelFilter) {
     match env::var("RUST_LOG") {
         Ok(_) => env_logger::init(),
@@ -31,6 +31,10 @@ async fn main() -> io::Result<()> {
             format_err!("Could not get config from envs: {}", e),
         )
     })?;
+
+    // WARNING: shows api key, we assume the app stays below DEBUG
+    // logging in prod.
+    debug!("Config:\n{:#?}", cfg);
 
     HttpServer::new(move || {
         App::new().service(

@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
 /// Custom settings for this app
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(default)]
 pub struct Config {
     /// API key to use for NASA APOD
