@@ -9,9 +9,11 @@ use failure::format_err;
 use log::LevelFilter;
 use serde_json::json;
 
-use std::{env, io, sync::Mutex};
+use std::{env, io};
 
 use crate::{config::Config, handlers::pictures};
+
+pub type ErrBox = Box<dyn std::error::Error>;
 
 /// Initializes logging on the supplied level unless RUST_LOG was specified
 pub fn init_logging(default_lvl: LevelFilter) {
@@ -25,7 +27,7 @@ pub fn init_logging(default_lvl: LevelFilter) {
 async fn main() -> io::Result<()> {
     init_logging(LevelFilter::Info);
 
-    let cfg: Config = envy::from_env().map_err(|e| {
+    let cfg = Config::init().map_err(|e| {
         io::Error::new(
             io::ErrorKind::Other,
             format_err!("Could not get config from envs: {}", e),
