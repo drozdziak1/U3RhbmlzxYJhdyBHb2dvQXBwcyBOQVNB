@@ -1,17 +1,19 @@
 #[macro_use]
 extern crate log;
 
+mod apod;
 mod config;
 mod handlers;
 
 use actix_web::{error, web, App, HttpResponse, HttpServer};
 use failure::format_err;
+use futures::lock::Mutex;
 use log::LevelFilter;
 use serde_json::json;
 
-use std::{env, io};
+use std::{env, io, sync::Arc};
 
-use crate::{config::Config, handlers::pictures};
+use crate::{apod::ApodState, config::Config, handlers::pictures};
 
 pub type ErrBox = Box<dyn std::error::Error>;
 
@@ -34,6 +36,8 @@ async fn main() -> io::Result<()> {
         )
     })?;
 
+    let apod_state = Arc::new(Mutex::new(ApodState::new(cfg.concurrent_requests)));
+
     // WARNING: shows api key, we assume the app stays below DEBUG
     // logging in prod.
     debug!("Config:\n{:#?}", cfg);
@@ -55,6 +59,7 @@ async fn main() -> io::Result<()> {
                     }),
                 )
                 .app_data(web::Data::new(cfg4app_data.clone()))
+                .app_data(web::Data::new(apod_state.clone()))
                 .route(web::get().to(pictures)),
         )
     })

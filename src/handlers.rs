@@ -1,9 +1,14 @@
+//! Request handlers
 use actix_web::{web, HttpResponse, Responder};
 use chrono::NaiveDate;
 use failure::{bail, format_err};
+use futures::lock::Mutex;
 use serde::Deserialize;
 use serde_json::json;
 
+use std::sync::{Arc};
+
+use crate::apod::ApodState;
 use crate::config::Config;
 
 /// Query params for the /pictures endpoint
@@ -30,11 +35,16 @@ impl PicturesParams {
 }
 
 /// Retrieves a collection of pictures from NASA APOD within the specified date range
-pub async fn pictures(q: web::Query<PicturesParams>, data: web::Data<Config>) -> impl Responder {
+pub async fn pictures(
+    q: web::Query<PicturesParams>,
+    cfg: web::Data<Config>,
+    apod_state: web::Data<Arc<Mutex<ApodState>>>,
+) -> impl Responder {
     let (start, end) = match q.parse_and_validate() {
         Ok(dates) => dates,
         Err(e) => return HttpResponse::BadRequest().json(json!({ "error": format!("{}", e) })),
     };
+
     HttpResponse::Ok().body("Hello, World!")
 }
 
