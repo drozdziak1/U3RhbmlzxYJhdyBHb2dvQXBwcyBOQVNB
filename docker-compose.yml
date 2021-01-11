@@ -9,7 +9,7 @@ services:
       - "database"
     volumes:
       - ".:/code"
-    command: "cargo run"
+    command: "sh -c 'diesel database setup && cargo run'"
     working_dir: "/code"
       
       
@@ -17,3 +17,5 @@ services:
     image: "postgres:latest"
     environment:
       POSTGRES_PASSWORD: "alohomora"
+    ports:
+      - "5432:5432"
