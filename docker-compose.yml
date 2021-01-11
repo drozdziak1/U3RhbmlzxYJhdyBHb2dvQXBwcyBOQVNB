@@ -1,0 +1,19 @@
+version: "3.7"
+services:
+  url-collector:
+    build:
+      context: .
+    ports:
+      - "8080:8080"
+    links:
+      - "database"
+    volumes:
+      - ".:/code"
+    command: "cargo run"
+    working_dir: "/code"
+      
+      
+  database:
+    image: "postgres:latest"
+    environment:
+      POSTGRES_PASSWORD: "alohomora"
