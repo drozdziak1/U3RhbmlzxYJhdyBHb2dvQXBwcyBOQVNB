@@ -16,9 +16,10 @@ pub struct ApodQuery {
     pub end_date: String,
 }
 
-/// Concurrent job synchronization state
+/// Concurrent APOD request dispatch
 #[derive(Clone)]
 pub struct ApodState {
+    /// Job slots
     pub sema: Arc<Semaphore>,
 }
 
