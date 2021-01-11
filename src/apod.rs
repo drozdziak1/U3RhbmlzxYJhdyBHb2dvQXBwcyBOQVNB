@@ -8,6 +8,7 @@ use std::{sync::Arc, time::Duration};
 
 use crate::ErrBox;
 
+/// A GET query struct for requests to APOD
 #[derive(Serialize)]
 pub struct ApodQuery {
     pub api_key: String,

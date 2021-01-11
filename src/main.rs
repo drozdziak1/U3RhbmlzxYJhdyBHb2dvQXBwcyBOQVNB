@@ -46,7 +46,7 @@ async fn main() -> io::Result<()> {
         App::new().service(
             web::resource("/pictures")
                 .app_data(
-                    // Respond to bad GET queries with with status 400
+                    // Respond to bad GET queries with status 400
                     // and JSON body: {"error": "<description>"}
                     web::QueryConfig::default().error_handler(|err, _req| {
                         let err_json = json!({ "error": format!("{}", err) });

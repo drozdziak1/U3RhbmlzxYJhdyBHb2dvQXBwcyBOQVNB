@@ -45,9 +45,9 @@ pub async fn pictures(
     };
 
     let query = ApodQuery {
+        api_key: cfg.api_key.clone(),
         start_date: start_date.format("%Y-%m-%d").to_string(),
         end_date: end_date.format("%Y-%m-%d").to_string(),
-        api_key: cfg.api_key.clone(),
     };
 
     let mut records = apod_state.do_get_date_range(&query).await.map_err(|e| {
@@ -57,6 +57,7 @@ pub async fn pictures(
         )
     })?;
 
+    // Extract the url field from each ApodRecord for response
     let ret = json!({
     "urls": records.drain(..).map(|r| r.url).collect::<Vec<_>>()
     });
