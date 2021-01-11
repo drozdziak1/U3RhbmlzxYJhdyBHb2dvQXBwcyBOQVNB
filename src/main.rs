@@ -7,11 +7,10 @@ mod handlers;
 
 use actix_web::{error, web, App, HttpResponse, HttpServer};
 use failure::format_err;
-use futures::lock::Mutex;
 use log::LevelFilter;
 use serde_json::json;
 
-use std::{env, io, sync::Arc};
+use std::{env, io};
 
 use crate::{apod::ApodState, config::Config, handlers::pictures};
 
@@ -36,7 +35,7 @@ async fn main() -> io::Result<()> {
         )
     })?;
 
-    let apod_state = Arc::new(Mutex::new(ApodState::new(cfg.concurrent_requests)));
+    let apod_state = ApodState::new(cfg.concurrent_requests);
 
     // WARNING: shows api key, we assume the app stays below DEBUG
     // logging in prod.
@@ -63,7 +62,7 @@ async fn main() -> io::Result<()> {
                 .route(web::get().to(pictures)),
         )
     })
-    .bind((cfg.host, cfg.port))?
+    .bind((cfg.host.as_str(), cfg.port))?
     .run()
     .await
 }

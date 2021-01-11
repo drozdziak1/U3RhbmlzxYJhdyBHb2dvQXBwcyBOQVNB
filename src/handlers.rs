@@ -1,14 +1,13 @@
 //! Request handlers
-use actix_web::{web, HttpResponse, Responder};
+use actix_web::{web, HttpResponse};
 use chrono::NaiveDate;
 use failure::{bail, format_err};
-use futures::lock::Mutex;
 use serde::Deserialize;
 use serde_json::json;
 
-use std::sync::{Arc};
+use std::io;
 
-use crate::apod::ApodState;
+use crate::apod::{ApodQuery, ApodState};
 use crate::config::Config;
 
 /// Query params for the /pictures endpoint
@@ -38,14 +37,31 @@ impl PicturesParams {
 pub async fn pictures(
     q: web::Query<PicturesParams>,
     cfg: web::Data<Config>,
-    apod_state: web::Data<Arc<Mutex<ApodState>>>,
-) -> impl Responder {
-    let (start, end) = match q.parse_and_validate() {
+    apod_state: web::Data<ApodState>,
+) -> Result<HttpResponse, io::Error> {
+    let (start_date, end_date) = match q.parse_and_validate() {
         Ok(dates) => dates,
-        Err(e) => return HttpResponse::BadRequest().json(json!({ "error": format!("{}", e) })),
+        Err(e) => return Ok(HttpResponse::BadRequest().json(json!({ "error": format!("{}", e) }))),
     };
 
-    HttpResponse::Ok().body("Hello, World!")
+    let query = ApodQuery {
+        start_date: start_date.format("%Y-%m-%d").to_string(),
+        end_date: end_date.format("%Y-%m-%d").to_string(),
+        api_key: cfg.api_key.clone(),
+    };
+
+    let mut records = apod_state.do_get_date_range(&query).await.map_err(|e| {
+        io::Error::new(
+            io::ErrorKind::Other,
+            format_err!("Could not download date range: {}", e.to_string()),
+        )
+    })?;
+
+    let ret = json!({
+    "urls": records.drain(..).map(|r| r.url).collect::<Vec<_>>()
+    });
+
+    Ok(HttpResponse::Ok().json(ret))
 }
 
 #[cfg(test)]
