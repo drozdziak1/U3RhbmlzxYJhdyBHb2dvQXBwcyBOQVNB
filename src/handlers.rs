@@ -1,6 +1,6 @@
 //! Request handlers
 use actix_web::{web, HttpResponse};
-use chrono::NaiveDate;
+use chrono::{NaiveDate, NaiveDateTime, Utc};
 use diesel::pg::PgConnection;
 use failure::{bail, format_err};
 use futures::lock::Mutex;
@@ -26,6 +26,12 @@ impl PicturesParams {
             .map_err(|e| format_err!("start_date: {}", e))?;
         let end = NaiveDate::parse_from_str(&self.end_date, "%Y-%m-%d")
             .map_err(|e| format_err!("end_date: {}", e))?;
+
+	let today = Utc::now().naive_local().date();
+
+	if !(end > today) {
+	    bail!("End date must not go into the future. (Unless you want a Rosenberg-Einstein wormhole in your living room)");
+	}
 
         if !(start <= end) {
             bail!("Start date must be before end date!");
@@ -123,6 +129,13 @@ mod tests {
     #[test]
     fn test_parse_and_validate_start_after_end() {
         let ok = PicturesParams::new("2021-01-03", "2021-01-02");
+
+        assert!(ok.parse_and_validate().is_err());
+    }
+
+    #[test]
+    fn test_parse_and_validate_end_after_today() {
+        let ok = PicturesParams::new("2021-01-03", "2077-01-01");
 
         assert!(ok.parse_and_validate().is_err());
     }
