@@ -82,23 +82,37 @@ impl ApodState {
 
         info!("Computed ranges to fetch from API: {:#?}", ranges_todo);
 
-        for range in ranges_todo {
-            let mut received_urls = self
-                .do_get_date_range(&ApodQuery {
-                    start_date: range.0.format("%Y-%m-%d").to_string(),
-                    end_date: range.1.format("%Y-%m-%d").to_string(),
-                    api_key: query.api_key.clone(),
-                })
-                .await?;
+        let range_futs = ranges_todo.iter().map(|range| {
+            let db4fut = db_mut.clone();
+            async move {
+                let received_urls = self
+                    .do_get_date_range(&ApodQuery {
+                        start_date: range.0.format("%Y-%m-%d").to_string(),
+                        end_date: range.1.format("%Y-%m-%d").to_string(),
+                        api_key: query.api_key.clone(),
+                    })
+                    .await?;
 
-            let db_conn = db_mut.lock().await;
+                // Load new records into DB immedately so that
+                // existing progress is not lost during random network
+                // errors
+                let db_conn = db4fut.lock().await;
 
-            diesel::insert_into(schema::urls::table)
-                .values(&received_urls)
-                .execute(&*db_conn)?;
+                diesel::insert_into(schema::urls::table)
+                    .values(&received_urls)
+                    .execute(&*db_conn)?;
 
-            records.append(&mut received_urls);
-        }
+                Result::<Vec<Url>, ErrBox>::Ok(received_urls)
+            }
+        });
+
+        let mut new_records = futures::future::try_join_all(range_futs)
+            .await?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+
+        records.append(&mut new_records);
 
         // Should be good for APOD, might need to be more clever for bigger services
         records.sort();
@@ -110,6 +124,8 @@ impl ApodState {
     async fn do_get_date_range(&self, query: &ApodQuery) -> Result<Vec<Url>, ErrBox> {
         // Acquire a job slot
         let _permit = self.sema.acquire(1).await;
+
+        // Make sure we're not breaching rate limits
         {
             let now = Utc::now().naive_local();
             let rl_state = &*self.rl_state.lock().await;
@@ -139,25 +155,24 @@ impl ApodState {
 
         let headers = res.headers();
 
+        // Update cache with the data
         {
             let rl_state = &mut *self.rl_state.lock().await;
 
             if let Some(value) = headers.get("X-RateLimit-Remaining") {
-		rl_state.requests_left = value.to_str()?.parse()?;
-	    } else {
-		warn!("No X-RateLimit-Remaining header in response from APOD API");
-	    }
+                rl_state.requests_left = value.to_str()?.parse()?;
+            } else {
+                warn!("No X-RateLimit-Remaining header in response from APOD API");
+            }
 
             rl_state.last_request_at = Utc::now().naive_local();
         }
 
-        let parsed_json: Vec<Url> = res.json().await?;
-
-        Ok(parsed_json)
+        Ok(res.json().await?)
     }
 }
 
-/// Returns a list of date ranges not covered by ascendingly sorted
+/// Returns a list of date ranges not covered by ascending sorted
 /// `Url` slice `records`. `records` must be in `start_date` and
 /// `end_date` range.
 pub fn compute_missing_ranges(
