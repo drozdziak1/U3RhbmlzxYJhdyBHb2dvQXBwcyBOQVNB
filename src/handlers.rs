@@ -40,7 +40,7 @@ pub async fn pictures(
     q: web::Query<PicturesParams>,
     cfg: web::Data<Config>,
     apod_state: web::Data<ApodState>,
-    db_conn: web::Data<Arc<Mutex<PgConnection>>>,
+    db_mut: web::Data<Arc<Mutex<PgConnection>>>,
 ) -> Result<HttpResponse, io::Error> {
     let (start_date, end_date) = match q.parse_and_validate() {
         Ok(dates) => dates,
@@ -53,7 +53,7 @@ pub async fn pictures(
         end_date: end_date.format("%Y-%m-%d").to_string(),
     };
 
-    let mut records = apod_state.get_date_range(&*db_conn.lock().await, &query).await.map_err(|e| {
+    let mut records = apod_state.get_date_range((**db_mut).clone(), &query).await.map_err(|e| {
         io::Error::new(
             io::ErrorKind::Other,
             format_err!("Could not download date range: {}", e.to_string()),

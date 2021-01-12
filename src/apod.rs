@@ -3,6 +3,7 @@
 use actix_web::client::Client;
 use chrono::{Duration as ChronoDuration, NaiveDate};
 use diesel::prelude::*;
+use futures::lock::Mutex;
 use futures_intrusive::sync::Semaphore;
 use serde::{Deserialize, Serialize};
 
@@ -26,6 +27,7 @@ pub struct ApodQuery {
 pub struct ApodState {
     /// Job slots
     pub sema: Arc<Semaphore>,
+    pub requests_left: Arc<Mutex<u16>>,
 }
 
 /// An APOD picture metadata
@@ -39,6 +41,7 @@ impl ApodState {
     pub fn new(concurrent_requests: usize) -> Self {
         Self {
             sema: Arc::new(Semaphore::new(true, concurrent_requests)),
+            requests_left: Arc::new(Mutex::new(1000u16)),
         }
     }
 
@@ -46,22 +49,26 @@ impl ApodState {
     /// falls back to requesting from NASA.
     pub async fn get_date_range(
         &self,
-        db_conn: &PgConnection,
+        db_mut: Arc<Mutex<PgConnection>>,
         query: &ApodQuery,
     ) -> Result<Vec<Url>, ErrBox> {
         use schema::urls::dsl::*;
 
-        let mut records = urls
-            .filter(date.between(&query.start_date, &query.end_date))
-            .order(date.asc())
-            .load::<Url>(db_conn)?;
+        let mut records = {
+            let db_conn = db_mut.lock().await;
+            urls.filter(date.between(&query.start_date, &query.end_date))
+                .order(date.asc())
+                .load::<Url>(&*db_conn)?
+        };
 
-        info!("Records: {:#?}", records);
+        info!("Records cached in the DB: {:#?}", records);
 
         let start_date = NaiveDate::parse_from_str(&query.start_date, "%Y-%m-%d")?;
         let end_date = NaiveDate::parse_from_str(&query.end_date, "%Y-%m-%d")?;
 
         let ranges_todo = compute_missing_ranges(records.as_slice(), start_date, end_date)?;
+
+        info!("Computed ranges to fetch from API: {:#?}", ranges_todo);
 
         for range in ranges_todo {
             let mut received_urls = self
@@ -72,13 +79,16 @@ impl ApodState {
                 })
                 .await?;
 
+            let db_conn = db_mut.lock().await;
+
             diesel::insert_into(schema::urls::table)
                 .values(&received_urls)
-                .execute(db_conn)?;
+                .execute(&*db_conn)?;
 
             records.append(&mut received_urls);
         }
 
+        // Should be good for APOD, might need to be more clever for bigger services
         records.sort();
 
         return Ok(records);
@@ -211,10 +221,7 @@ mod tests {
         let start = NaiveDate::from_ymd(2020, 1, 1);
         let end = NaiveDate::from_ymd(2020, 1, 3);
 
-        let expected = vec![(
-	    start.clone(),
-	    end.clone()
-        )];
+        let expected = vec![(start.clone(), end.clone())];
 
         assert_eq!(
             compute_missing_ranges(records.as_slice(), start, end)?,
