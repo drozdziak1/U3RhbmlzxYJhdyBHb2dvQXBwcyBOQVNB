@@ -61,7 +61,7 @@ impl ApodState {
         let start_date = NaiveDate::parse_from_str(&query.start_date, "%Y-%m-%d")?;
         let end_date = NaiveDate::parse_from_str(&query.end_date, "%Y-%m-%d")?;
 
-        let ranges_todo = compute_missing_date_ranges(records.as_slice(), start_date, end_date)?;
+        let ranges_todo = compute_missing_ranges(records.as_slice(), start_date, end_date)?;
 
         for range in ranges_todo {
             let mut received_urls = self
@@ -104,7 +104,10 @@ impl ApodState {
     }
 }
 
-pub fn compute_missing_date_ranges(
+/// Returns a list of date ranges not covered by ascendingly sorted
+/// `Url` slice `records`. `records` must be in `start_date` and
+/// `end_date` range.
+pub fn compute_missing_ranges(
     records: &[Url],
     start_date: NaiveDate,
     end_date: NaiveDate,
@@ -113,13 +116,13 @@ pub fn compute_missing_date_ranges(
     let mut ranges_todo = vec![];
 
     if records.is_empty() {
-        ranges_todo.push((start_date, end_date));
+        return Ok(vec![(start_date, end_date)]);
     }
     for record in records.iter() {
         let r_date = NaiveDate::parse_from_str(&record.date, "%Y-%m-%d")?;
 
         // If we have a hole in our cache, compute the range and
-        // add it to our todo list.
+        // add it to the todo list.
         if r_date > next_expected_date {
             let diff = r_date - next_expected_date;
 
@@ -134,7 +137,90 @@ pub fn compute_missing_date_ranges(
         next_expected_date += ChronoDuration::days(1);
     }
 
-    info!("Ranges: {:#?}", ranges_todo);
+    // Cover the rightmost gap if before end_date
+    if let Some(last) = records.last() {
+        let last_record_date = NaiveDate::parse_from_str(&last.date, "%Y-%m-%d")?;
+
+        if last_record_date < end_date {
+            let diff = end_date - last_record_date;
+
+            let last_range_start = last_record_date + ChronoDuration::days(1);
+            let last_range_end = last_range_start + diff - ChronoDuration::days(1);
+
+            ranges_todo.push((last_range_start, last_range_end));
+        }
+    }
 
     Ok(ranges_todo)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_compute_missing_ranges_missing_edges() -> Result<(), ErrBox> {
+        let records = vec![Url {
+            date: "2020-01-02".to_owned(),
+            url: "".to_owned(),
+        }];
+        let start = NaiveDate::from_ymd(2020, 1, 1);
+        let end = NaiveDate::from_ymd(2020, 1, 3);
+
+        let expected = vec![(start.clone(), start.clone()), (end.clone(), end.clone())];
+
+        assert_eq!(
+            compute_missing_ranges(records.as_slice(), start, end)?,
+            expected
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_compute_missing_ranges_missing_middle() -> Result<(), ErrBox> {
+        let records = vec![
+            Url {
+                date: "2020-01-01".to_owned(),
+                url: "".to_owned(),
+            },
+            Url {
+                date: "2020-01-03".to_owned(),
+                url: "".to_owned(),
+            },
+        ];
+        let start = NaiveDate::from_ymd(2020, 1, 1);
+        let end = NaiveDate::from_ymd(2020, 1, 3);
+
+        let expected = vec![(
+            NaiveDate::from_ymd(2020, 1, 2),
+            NaiveDate::from_ymd(2020, 1, 2),
+        )];
+
+        assert_eq!(
+            compute_missing_ranges(records.as_slice(), start, end)?,
+            expected
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_compute_missing_ranges_empty_records() -> Result<(), ErrBox> {
+        let records = vec![];
+        let start = NaiveDate::from_ymd(2020, 1, 1);
+        let end = NaiveDate::from_ymd(2020, 1, 3);
+
+        let expected = vec![(
+	    start.clone(),
+	    end.clone()
+        )];
+
+        assert_eq!(
+            compute_missing_ranges(records.as_slice(), start, end)?,
+            expected
+        );
+
+        Ok(())
+    }
 }
