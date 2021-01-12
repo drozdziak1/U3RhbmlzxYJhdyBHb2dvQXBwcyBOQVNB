@@ -10,6 +10,8 @@ the bottom.
 - diesel-cli
 - Rust
 
+Rust package dependencies are listed in `Cargo.toml` and described in comments
+
 # Installation
 Once you meet the dependencies listed above, start by populating your Postgres database:
 ```console
