@@ -1,6 +1,6 @@
 //! Request handlers
 use actix_web::{web, HttpResponse};
-use chrono::{NaiveDate, NaiveDateTime, Utc};
+use chrono::{NaiveDate, Utc};
 use diesel::pg::PgConnection;
 use failure::{bail, format_err};
 use futures::lock::Mutex;
@@ -9,8 +9,7 @@ use serde_json::json;
 
 use std::{io, sync::{Arc}};
 
-use crate::apod::{ApodQuery, ApodState};
-use crate::config::Config;
+use crate::{config::Config, apod::{ApodQuery, ApodState}};
 
 /// Query params for the /pictures endpoint
 #[derive(Clone, Deserialize)]

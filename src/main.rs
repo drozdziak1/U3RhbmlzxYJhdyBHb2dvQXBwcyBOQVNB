@@ -31,6 +31,7 @@ pub fn init_logging(default_lvl: LevelFilter) {
 
 #[actix_web::main]
 async fn main() -> io::Result<()> {
+    dotenv::dotenv().ok(); // Doesn't matter if .env is not found
     init_logging(LevelFilter::Info);
 
     let cfg = Config::init().map_err(|e| {

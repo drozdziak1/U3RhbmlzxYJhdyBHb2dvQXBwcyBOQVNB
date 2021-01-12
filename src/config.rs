@@ -23,7 +23,6 @@ pub struct Config {
 impl Config {
     /// Loads config from environment variables, including .env
     pub fn init() -> Result<Self, ErrBox> {
-	dotenv::dotenv().ok(); // Doesn't matter if .env is not found
         Ok(envy::from_env()?)
     }
 }
