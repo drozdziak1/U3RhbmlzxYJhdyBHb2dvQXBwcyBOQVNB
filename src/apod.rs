@@ -1,8 +1,9 @@
 //! Apod request code,
 
 use actix_web::client::Client;
-use chrono::{Duration as ChronoDuration, NaiveDate};
+use chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime, Utc};
 use diesel::prelude::*;
+use failure::format_err;
 use futures::lock::Mutex;
 use futures_intrusive::sync::Semaphore;
 use serde::{Deserialize, Serialize};
@@ -27,7 +28,14 @@ pub struct ApodQuery {
 pub struct ApodState {
     /// Job slots
     pub sema: Arc<Semaphore>,
-    pub requests_left: Arc<Mutex<u16>>,
+    pub rl_state: Arc<Mutex<RateLimitState>>,
+}
+
+#[derive(Clone)]
+pub struct RateLimitState {
+    pub requests_left: u16,
+    pub last_request_at: NaiveDateTime,
+    pub reset_period: ChronoDuration,
 }
 
 /// An APOD picture metadata
@@ -41,7 +49,11 @@ impl ApodState {
     pub fn new(concurrent_requests: usize) -> Self {
         Self {
             sema: Arc::new(Semaphore::new(true, concurrent_requests)),
-            requests_left: Arc::new(Mutex::new(1000u16)),
+            rl_state: Arc::new(Mutex::new(RateLimitState {
+                requests_left: 1000,
+                last_request_at: Utc::now().naive_local(),
+                reset_period: ChronoDuration::hours(1),
+            })),
         }
     }
 
@@ -98,8 +110,25 @@ impl ApodState {
     async fn do_get_date_range(&self, query: &ApodQuery) -> Result<Vec<Url>, ErrBox> {
         // Acquire a job slot
         let _permit = self.sema.acquire(1).await;
+        {
+            let now = Utc::now().naive_local();
+            let rl_state = &*self.rl_state.lock().await;
+            let delta = now - rl_state.last_request_at;
+            if rl_state.requests_left == 0 && delta < rl_state.reset_period {
+                let next_request_in = rl_state.reset_period - delta;
+                info!(
+                    "Reached request limit. Next request in {} minutes",
+                    next_request_in
+                );
 
-        // Take the first client that
+                return Err(format_err!(
+                    "Reached request limit. Try again in {} minutes",
+                    next_request_in
+                )
+                .into());
+            }
+        }
+
         let client = Client::builder().timeout(Duration::from_secs(60)).finish();
 
         let mut res = client
@@ -107,6 +136,20 @@ impl ApodState {
             .query(query)?
             .send()
             .await?;
+
+        let headers = res.headers();
+
+        {
+            let rl_state = &mut *self.rl_state.lock().await;
+
+            if let Some(value) = headers.get("X-RateLimit-Remaining") {
+		rl_state.requests_left = value.to_str()?.parse()?;
+	    } else {
+		warn!("No X-RateLimit-Remaining header in response from APOD API");
+	    }
+
+            rl_state.last_request_at = Utc::now().naive_local();
+        }
 
         let parsed_json: Vec<Url> = res.json().await?;
 
