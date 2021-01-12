@@ -9,6 +9,8 @@ services:
       - "database"
     volumes:
       - ".:/code"
+    environment:
+      DATABASE_URL: "postgres://postgres:changeme@database:5432/url-collector"
     command: "sh -c 'diesel database setup && cargo run'"
     working_dir: "/code"
       
