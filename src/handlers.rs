@@ -1,11 +1,13 @@
 //! Request handlers
 use actix_web::{web, HttpResponse};
 use chrono::NaiveDate;
+use diesel::pg::PgConnection;
 use failure::{bail, format_err};
+use futures::lock::Mutex;
 use serde::Deserialize;
 use serde_json::json;
 
-use std::io;
+use std::{io, sync::{Arc}};
 
 use crate::apod::{ApodQuery, ApodState};
 use crate::config::Config;
@@ -38,6 +40,7 @@ pub async fn pictures(
     q: web::Query<PicturesParams>,
     cfg: web::Data<Config>,
     apod_state: web::Data<ApodState>,
+    db_conn: web::Data<Arc<Mutex<PgConnection>>>,
 ) -> Result<HttpResponse, io::Error> {
     let (start_date, end_date) = match q.parse_and_validate() {
         Ok(dates) => dates,
@@ -50,7 +53,7 @@ pub async fn pictures(
         end_date: end_date.format("%Y-%m-%d").to_string(),
     };
 
-    let mut records = apod_state.do_get_date_range(&query).await.map_err(|e| {
+    let mut records = apod_state.get_date_range(&*db_conn.lock().await, &query).await.map_err(|e| {
         io::Error::new(
             io::ErrorKind::Other,
             format_err!("Could not download date range: {}", e.to_string()),

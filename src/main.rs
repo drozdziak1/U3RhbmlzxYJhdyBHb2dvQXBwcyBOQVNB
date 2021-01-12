@@ -1,16 +1,21 @@
 #[macro_use]
+extern crate diesel;
+#[macro_use]
 extern crate log;
 
 mod apod;
 mod config;
+mod db;
 mod handlers;
 
 use actix_web::{error, web, App, HttpResponse, HttpServer};
+use diesel::prelude::*;
 use failure::format_err;
+use futures::lock::Mutex;
 use log::LevelFilter;
 use serde_json::json;
 
-use std::{env, io};
+use std::{env, io, sync::Arc};
 
 use crate::{apod::ApodState, config::Config, handlers::pictures};
 
@@ -41,6 +46,15 @@ async fn main() -> io::Result<()> {
     // logging in prod.
     debug!("Config:\n{:#?}", cfg);
 
+    let db_conn = Arc::new(Mutex::new(
+        diesel::pg::PgConnection::establish(&cfg.database_url).map_err(|e| {
+            io::Error::new(
+                io::ErrorKind::Other,
+                format_err!("Could not connect to db: {}", e),
+            )
+        })?,
+    ));
+
     let cfg4app_data = cfg.clone();
     HttpServer::new(move || {
         App::new().service(
@@ -59,6 +73,7 @@ async fn main() -> io::Result<()> {
                 )
                 .app_data(web::Data::new(cfg4app_data.clone()))
                 .app_data(web::Data::new(apod_state.clone()))
+                .app_data(web::Data::new(db_conn.clone()))
                 .route(web::get().to(pictures)),
         )
     })
