@@ -73,14 +73,14 @@ impl ApodState {
                 .load::<Url>(&*db_conn)?
         };
 
-        info!("Records cached in the DB: {:#?}", records);
+        debug!("Fetched records cached in the DB: {:#?}", records);
 
         let start_date = NaiveDate::parse_from_str(&query.start_date, "%Y-%m-%d")?;
         let end_date = NaiveDate::parse_from_str(&query.end_date, "%Y-%m-%d")?;
 
         let ranges_todo = compute_missing_ranges(records.as_slice(), start_date, end_date)?;
 
-        info!("Computed ranges to fetch from API: {:#?}", ranges_todo);
+        debug!("Computed ranges to fetch from NASA API: {:#?}", ranges_todo);
 
         let range_futs = ranges_todo.iter().map(|range| {
             let db4fut = db_mut.clone();
@@ -120,7 +120,7 @@ impl ApodState {
         return Ok(records);
     }
 
-    /// Retrieves APOD images specified by `query`.
+    /// Retrieves from NASA APOD images specified by `query`.
     async fn do_get_date_range(&self, query: &ApodQuery) -> Result<Vec<Url>, ErrBox> {
         // Acquire a job slot
         let _permit = self.sema.acquire(1).await;
@@ -161,6 +161,7 @@ impl ApodState {
 
             if let Some(value) = headers.get("X-RateLimit-Remaining") {
                 rl_state.requests_left = value.to_str()?.parse()?;
+		info!("{} Requests till limit", rl_state.requests_left);
             } else {
                 warn!("No X-RateLimit-Remaining header in response from APOD API");
             }
