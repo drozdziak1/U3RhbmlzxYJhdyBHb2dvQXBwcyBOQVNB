@@ -1,13 +1,14 @@
 //! Apod request code,
 
 use actix_web::client::Client;
+use chrono::{Duration as ChronoDuration, NaiveDate};
 use diesel::prelude::*;
 use futures_intrusive::sync::Semaphore;
 use serde::{Deserialize, Serialize};
 
 use std::{sync::Arc, time::Duration};
 
-use crate::ErrBox;
+use crate::{db::schema::{self,urls}, ErrBox};
 
 /// A GET query struct for requests to APOD
 #[derive(Serialize)]
@@ -25,7 +26,7 @@ pub struct ApodState {
 }
 
 /// An APOD picture metadata
-#[derive(Debug, Deserialize, Queryable)]
+#[derive(Clone, Debug, Deserialize, Insertable, Queryable, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Url {
     pub date: String,
     pub url: String,
@@ -38,15 +39,75 @@ impl ApodState {
         }
     }
 
-    /// Retrieves APOD urls specified by `query` from DB cache or asks
-    /// NASA if anything's missing.
+    /// Retrieves APOD urls specified by `query` from DB cache or
+    /// falls back to requesting from NASA.
     pub async fn get_date_range(
         &self,
         db_conn: &PgConnection,
         query: &ApodQuery,
     ) -> Result<Vec<Url>, ErrBox> {
-        unimplemented!();
+        use schema::urls::dsl::*;
+
+        let mut records = urls
+            .filter(date.between(&query.start_date, &query.end_date))
+            .order(date.asc())
+            .load::<Url>(db_conn)?;
+
+        info!("Records: {:#?}", records);
+
+        let start_date = NaiveDate::parse_from_str(&query.start_date, "%Y-%m-%d")?;
+        let end_date = NaiveDate::parse_from_str(&query.end_date, "%Y-%m-%d")?;
+
+        let retrieved_dates: Vec<String> = records.iter().cloned().map(|u| u.date).collect();
+
+        let mut next_expected_date = start_date;
+        let mut ranges_todo = vec![];
+
+	if retrieved_dates.is_empty() {
+	    ranges_todo.push((start_date, end_date));
+	}
+        for r_date_str in retrieved_dates {
+            let r_date = NaiveDate::parse_from_str(&r_date_str, "%Y-%m-%d")?;
+
+            // If we have a hole in our cache, compute the range and
+            // add it to our todo list.
+            if r_date > next_expected_date {
+                let diff = r_date - next_expected_date;
+
+                let range_start = next_expected_date;
+                let range_end = range_start + diff - ChronoDuration::days(1);
+
+                ranges_todo.push((range_start, range_end));
+
+                // Catch up with current retrieved date
+                next_expected_date = r_date;
+            }
+            next_expected_date += ChronoDuration::days(1);
+        }
+
+	info!("Ranges: {:#?}", ranges_todo);
+
+        for range in ranges_todo {
+            let mut received_urls = self
+                .do_get_date_range(&ApodQuery {
+                    start_date: range.0.format("%Y-%m-%d").to_string(),
+                    end_date: range.1.format("%Y-%m-%d").to_string(),
+                    api_key: query.api_key.clone(),
+                })
+                .await?;
+
+            diesel::insert_into(schema::urls::table)
+                .values(&received_urls)
+                .execute(db_conn)?;
+
+            records.append(&mut received_urls);
+        }
+
+        records.sort();
+
+        return Ok(records);
     }
+
     /// Retrieves APOD images specified by `query`.
     async fn do_get_date_range(&self, query: &ApodQuery) -> Result<Vec<Url>, ErrBox> {
         // Acquire a job slot
